@@ -1,5 +1,5 @@
-fastapi
 uvicorn
+fastapi
 requests
 beautifulsoup4
 firebase-admin
