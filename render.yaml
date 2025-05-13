@@ -5,5 +5,5 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn main:app --host 0.0.0.0 --port 10000"
     envVars:
-      - key: GOOGLE_APPLICATION_CREDENTIALS
+      - key: FIREBASE_CREDENTIALS
         value: path/to/your/firebase_key.json
