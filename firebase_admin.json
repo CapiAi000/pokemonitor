@@ -1,13 +1,1 @@
-{
-  "type": "service_account",
-  "project_id": "pokemonitor-3c4f9",
-  "private_key_id": "51918ba7075e640ba5e7c689ff7efc9958b344b4",
-  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC3V0ntnjSO3MH0\nTpmTdP4K/heYTcoBLrbg3w/d1FX44vsIa6nQU+N6TT1/lSGtbair5Rak2/6kXe3J\na6rbjwwnzpCKKZtjvLMyqKQQ9L8GI0i8Ei12o9Oa9VyNR4oNiKLL56OPZML15Zgf\n+ef+AWZNfYtr7hUMVRaZD2ogMPWDOJvZGcr7U7DImvN0MRX2lIX4Ve1NniPPbFRk\ncIv2W3/bbWksdv/5bFVW7JlwHXEFF3bH2coYyIxyzvlFd3fBnBozDOi2lm9ceRmN\ncS9g/bk8n26LQwSO71nsQfnmufrPmB8j7GMg4LG0QzWZiYzanrBFx0cMk6jMiwex\nSsyPzoZDAgMBAAECggEADWoCi7Mmj0lRm4lgrSxDJhS/LzKJ1BpR4RQQ+h7+B068\nJTqTWx24KAucs0f7BdBfJeyGApvh/q6spi8NejD2J7dyVdmDeAGnbs5t6putmkpc\nmP4Pe32zDsRi+CdCz4iuuJKDIguyRAF/Zt+G/Muna4YC/GuX+KYFGD/LeP18CRSs\nfYxwhGC5BSpXb5rJlpNYBSgPaN64s02fgEMyHTC7QByBspWsfERUXPqz30FH2sx+\nhP2Vxs/yo4f0chSCvoMEs/bpD1MIOkZPlXjo9uDJLWMSDQASFXdcbrz1L8uE6o2v\nuckW8nPIfkBZ7xKsPO+5YZlTNJwlOYzwEDht3dHsKQKBgQDjLJWiWP4BqGliEZMm\nbpXIj00PRg9xm2ntoSr3Gs82YcnO7FDH8ScReSKgFeZAsC3ycKR53tlTBo/y80gj\nFwRv09ZlZWihqZ0cCVfnCe30Kgut9Wbdj1MDZvDE8HtgtpB0FpyvQynmGEx90wPJ\nX0WA1U8O3PFLJSVkIiMaNlYE9QKBgQDOmtkmgiDcdX1myKGb9Ukvh3ZIz6b1Js4X\nOCgJi5Rg69nbHP/hwkmb/rn3HMG6LX4U1rIK2lRfTa0PgIdg5CiNOPQmMbpY3gWx\n0nKGjK1sprffjBVT0QgiumsawtjAUgRlg686zezhmofRsynPrOU1Invp691sPsyl\nlFxjDbkbVwKBgF4QF+Ug9Au7r+brYAKJx3tD2qR4XeysbS/3i9LFRwc9dlI3hztC\nnuqdPbkLWEtwp5W7Dl9n5pR6IyB1m2jsHuouzJcvZiOKF4OEWuFPOzfeMPfWpMEY\nl0bRWOAysuNYtHdc5YOsS6z6YrG2rdqzmBPAPvvogACdYN4VRHOWDAgBAoGABVJH\ntY40enksObGBOBshP3Alw8pVaosNU9vGbDiEIdrxSYt9q7rtWm89Kvg6pSj2zmKZ\nQ15MPggqJPQSiJRX1wtYfoNZYWCWlPXurTiCXwIMSl25TudbZkmW6KGMI6f5JQQ3\nRzR2nXj1dpk+wnKZlLzGpEfG9DrJ2pnvpz17PxECgYA5KSKcY/uGTmpZwGIzAfKX\nEbIZxs60oRHbIvyILqZElPCtDipjHKfSYEBE2CoKkVjPP03vMSFJW+A0I53o5/bL\n0shy7CdfdG+S+raciC8DMzJF81HzD7+bEFjlz/FUk+kzQc4ja5CvJzRO8g+5jWgX\nKGT1x9ZWF5qVaeq4ZU9zkg==\n-----END PRIVATE KEY-----\n",
-  "client_email": "firebase-adminsdk-fbsvc@pokemonitor-3c4f9.iam.gserviceaccount.com",
-  "client_id": "114850874094159678965",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40pokemonitor-3c4f9.iam.gserviceaccount.com",
-  "universe_domain": "googleapis.com"
-}
+
