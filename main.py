@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 import firebase_admin
 from firebase_admin import credentials, messaging
 import os
-
+import uvicorn
 # ==== CONFIG ====
 # Firebase credentials
 FIREBASE_CREDENTIALS_PATH = "firebase-admin.json"
