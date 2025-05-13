@@ -1,5 +1,6 @@
 fastapi
 flask
+gunicorn
 uvicorn
 requests
 beautifulsoup4
