@@ -1,78 +1,97 @@
-from fastapi import FastAPI, BackgroundTasks
-import requests
-import time
-import firebase_admin
-from firebase_admin import credentials, messaging
 import os
 import json
+import time
+import threading
+import requests
+from flask import Flask, request, jsonify
+from bs4 import BeautifulSoup
+import firebase_admin
+from firebase_admin import credentials, messaging, db
 
-app = FastAPI()
+# === SETUP FIREBASE ===
+cred = credentials.Certificate('firebase_admin.json')  # Assicurati che sia nel progetto o usa variabili d’ambiente
+firebase_admin.initialize_app(cred, {
+    'databaseURL': os.getenv('FIREBASE_DB_URL')  # Inserisci questo su Render come variabile ambiente
+})
 
-# Inizializza Firebase usando la variabile d’ambiente
-if not firebase_admin._apps:
-    firebase_cred_json = os.environ.get("FIREBASE_ADMIN_CREDENTIALS")
-    if not firebase_cred_json:
-        raise ValueError("Variabile FIREBASE_ADMIN_CREDENTIALS mancante")
-    cred_dict = json.loads(firebase_cred_json)
-    cred = credentials.Certificate(cred_dict)
-    firebase_admin.initialize_app(cred)
+# === FLASK APP ===
+app = Flask(__name__)
 
-# Lista di URL da monitorare
-URLS = [
-    "https://www.amazon.it/dp/B0BVMZKTVG",  # Pokémon Scarlatto e Violetto
-    # aggiungi altri link se vuoi
-]
+# === MONITORING LOGIC ===
+def extract_availability(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    unavailable_texts = [
+        "Non disponibile", "Currently unavailable",
+        "Non è al momento disponibile", "We don't know when"
+    ]
+    return not any(text.lower() in soup.text.lower() for text in unavailable_texts)
 
-# Lista di token FCM dei dispositivi client (da aggiornare dinamicamente)
-TOKENS = [
-    # Esempio: "fcm_token_123"
-]
-
-# Funzione per verificare disponibilità del prodotto
-def is_available_amazon(url: str) -> bool:
+def check_and_notify(user_id, url):
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers)
-        return "Aggiungi al carrello" in response.text or "disponibile" in response.text.lower()
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        if extract_availability(response.text):
+            # Invia notifica se disponibile
+            message = messaging.Message(
+                notification=messaging.Notification(
+                    title='Prodotto disponibile!',
+                    body='Clicca per andare al checkout 🔥',
+                ),
+                data={"url": url},
+                topic=user_id
+            )
+            messaging.send(message)
     except Exception as e:
-        print(f"[ERRORE] Controllo fallito per {url}: {e}")
-        return False
+        print(f"Errore su {url}: {e}")
 
-# Funzione per inviare notifica push via FCM
-def send_push_notification(title: str, body: str):
-    message = messaging.MulticastMessage(
-        notification=messaging.Notification(title=title, body=body),
-        tokens=TOKENS,
-    )
-    response = messaging.send_multicast(message)
-    print(f"✅ Notifiche inviate: {response.success_count} ✅ Fallite: {response.failure_count}")
-
-# Funzione di monitoraggio continua (loop)
-def monitor():
-    print("🔍 Monitoraggio avviato...")
+def monitoring_loop():
     while True:
-        for url in URLS:
-            if is_available_amazon(url):
-                print(f"✅ Prodotto DISPONIBILE su: {url}")
-                send_push_notification("Prodotto Disponibile!", f"Controlla subito: {url}")
-            else:
-                print(f"❌ Prodotto NON disponibile: {url}")
-        time.sleep(60)  # ogni 60 secondi
+        users_ref = db.reference('users')
+        users_data = users_ref.get()
+        if users_data:
+            for user_id, data in users_data.items():
+                urls = data.get('urls', [])
+                for url in urls:
+                    check_and_notify(user_id, url)
+        time.sleep(60)  # Intervallo tra i controlli
 
-@app.on_event("startup")
-def start_monitoring():
-    import threading
-    thread = threading.Thread(target=monitor, daemon=True)
-    thread.start()
+threading.Thread(target=monitoring_loop, daemon=True).start()
 
-@app.get("/")
+# === API ENDPOINTS ===
+
+@app.route('/add_url', methods=['POST'])
+def add_url():
+    data = request.json
+    user_id = data.get('user_id')
+    url = data.get('url')
+    if not user_id or not url:
+        return jsonify({'error': 'user_id and url are required'}), 400
+
+    user_ref = db.reference(f'users/{user_id}/urls')
+    current_urls = user_ref.get() or []
+    if url not in current_urls:
+        current_urls.append(url)
+    user_ref.set(current_urls)
+    return jsonify({'message': 'URL aggiunto con successo'})
+
+@app.route('/remove_url', methods=['POST'])
+def remove_url():
+    data = request.json
+    user_id = data.get('user_id')
+    url = data.get('url')
+    if not user_id or not url:
+        return jsonify({'error': 'user_id and url are required'}), 400
+
+    user_ref = db.reference(f'users/{user_id}/urls')
+    current_urls = user_ref.get() or []
+    if url in current_urls:
+        current_urls.remove(url)
+        user_ref.set(current_urls)
+    return jsonify({'message': 'URL rimosso con successo'})
+
+@app.route('/')
 def home():
-    return {"status": "Pokemonitor backend attivo!"}
+    return 'Pokemonitor backend attivo!'
 
-@app.post("/add-token/")
-def add_token(token: str):
-    if token not in TOKENS:
-        TOKENS.append(token)
-    return {"message": "Token aggiunto!"}
+# === AVVIO ===
+if __name__ == '__main__':
+    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
