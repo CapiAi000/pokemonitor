@@ -9,7 +9,7 @@ import os
 import uvicorn
 # ==== CONFIG ====
 # Firebase credentials
-FIREBASE_CREDENTIALS_PATH = "firebase-admin.json"
+
 
 # CORS Origins (es. app React/Vue/Flutter)
 origins = ["*"]  # In produzione è meglio specificare i domini
