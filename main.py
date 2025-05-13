@@ -1,74 +1,78 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, BackgroundTasks
 import requests
-from bs4 import BeautifulSoup
+import time
 import firebase_admin
 from firebase_admin import credentials, messaging
 import os
-import uvicorn
-# ==== CONFIG ====
-# Firebase credentials
+import json
 
-
-# CORS Origins (es. app React/Vue/Flutter)
-origins = ["*"]  # In produzione è meglio specificare i domini
-
-# ==== APP SETUP ====
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ==== FIREBASE INIT ====
+# Inizializza Firebase usando la variabile d’ambiente
 if not firebase_admin._apps:
-    if os.path.exists(FIREBASE_CREDENTIALS_PATH):
-        cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
-        firebase_admin.initialize_app(cred)
-    else:
-        raise FileNotFoundError("Il file firebase-admin.json non è stato trovato")
+    firebase_cred_json = os.environ.get("FIREBASE_ADMIN_CREDENTIALS")
+    if not firebase_cred_json:
+        raise ValueError("Variabile FIREBASE_ADMIN_CREDENTIALS mancante")
+    cred_dict = json.loads(firebase_cred_json)
+    cred = credentials.Certificate(cred_dict)
+    firebase_admin.initialize_app(cred)
 
-# ==== SCRAPING FUNCTION ====
-def check_availability(url: str) -> bool:
+# Lista di URL da monitorare
+URLS = [
+    "https://www.amazon.it/dp/B0BVMZKTVG",  # Pokémon Scarlatto e Violetto
+    # aggiungi altri link se vuoi
+]
+
+# Lista di token FCM dei dispositivi client (da aggiornare dinamicamente)
+TOKENS = [
+    # Esempio: "fcm_token_123"
+]
+
+# Funzione per verificare disponibilità del prodotto
+def is_available_amazon(url: str) -> bool:
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
-        availability = soup.select_one("#availability")
-        if availability and "disponibile" in availability.text.lower():
-            return True
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers)
+        return "Aggiungi al carrello" in response.text or "disponibile" in response.text.lower()
     except Exception as e:
-        print(f"Errore nello scraping: {e}")
-    return False
+        print(f"[ERRORE] Controllo fallito per {url}: {e}")
+        return False
 
-# ==== FIREBASE NOTIFICATION ====
-def send_notification(token: str, title: str, body: str) -> None:
-    try:
-        message = messaging.Message(
-            notification=messaging.Notification(title=title, body=body),
-            token=token,
-        )
-        response = messaging.send(message)
-        print(f"Notifica inviata: {response}")
-    except Exception as e:
-        print(f"Errore nell'invio della notifica: {e}")
+# Funzione per inviare notifica push via FCM
+def send_push_notification(title: str, body: str):
+    message = messaging.MulticastMessage(
+        notification=messaging.Notification(title=title, body=body),
+        tokens=TOKENS,
+    )
+    response = messaging.send_multicast(message)
+    print(f"✅ Notifiche inviate: {response.success_count} ✅ Fallite: {response.failure_count}")
 
-# ==== API ROUTES ====
+# Funzione di monitoraggio continua (loop)
+def monitor():
+    print("🔍 Monitoraggio avviato...")
+    while True:
+        for url in URLS:
+            if is_available_amazon(url):
+                print(f"✅ Prodotto DISPONIBILE su: {url}")
+                send_push_notification("Prodotto Disponibile!", f"Controlla subito: {url}")
+            else:
+                print(f"❌ Prodotto NON disponibile: {url}")
+        time.sleep(60)  # ogni 60 secondi
+
+@app.on_event("startup")
+def start_monitoring():
+    import threading
+    thread = threading.Thread(target=monitor, daemon=True)
+    thread.start()
+
 @app.get("/")
-async def root():
-    return {"status": "Pokemonitor API Online"}
+def home():
+    return {"status": "Pokemonitor backend attivo!"}
 
-@app.post("/check/")
-async def check_item(url: str, token: str):
-    if not url or not token:
-        raise HTTPException(status_code=400, detail="URL e token sono obbligatori")
-    available = check_availability(url)
-    if available:
-        send_notification(token, "Disponibile!", f"Il prodotto è tornato disponibile:\n{url}")
-    return {"url": url, "disponibile": available}
-
+@app.post("/add-token/")
+def add_token(token: str):
+    if token not in TOKENS:
+        TOKENS.append(token)
+    return {"message": "Token aggiunto!"}
