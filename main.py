@@ -1,97 +1,118 @@
 import os
 import json
-import time
-import threading
 import requests
+import threading
+import time
 from flask import Flask, request, jsonify
-from bs4 import BeautifulSoup
 import firebase_admin
-from firebase_admin import credentials, messaging, db
+from firebase_admin import credentials, firestore, messaging
+from bs4 import BeautifulSoup
 
-# === SETUP FIREBASE ===
-cred = credentials.Certificate('firebase_admin.json')  # Assicurati che sia nel progetto o usa variabili d’ambiente
-firebase_admin.initialize_app(cred, {
-    'databaseURL': os.getenv('FIREBASE_DB_URL')  # Inserisci questo su Render come variabile ambiente
-})
+# === Inizializza Firebase da variabile d'ambiente ===
+firebase_cred_json = os.getenv('FIREBASE_ADMIN_CRED')
+if not firebase_cred_json:
+    raise ValueError("Variabile d'ambiente FIREBASE_ADMIN_CRED non impostata")
+cred = credentials.Certificate(json.loads(firebase_cred_json))
+firebase_admin.initialize_app(cred)
 
-# === FLASK APP ===
+# === Inizializza Firestore ===
+db = firestore.client()
+
+# === Config Flask ===
 app = Flask(__name__)
 
-# === MONITORING LOGIC ===
-def extract_availability(html):
-    soup = BeautifulSoup(html, 'html.parser')
-    unavailable_texts = [
-        "Non disponibile", "Currently unavailable",
-        "Non è al momento disponibile", "We don't know when"
-    ]
-    return not any(text.lower() in soup.text.lower() for text in unavailable_texts)
-
-def check_and_notify(user_id, url):
+# === Funzione per verificare disponibilità prodotto ===
+def is_product_available(url):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                      '(KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
+    }
     try:
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-        if extract_availability(response.text):
-            # Invia notifica se disponibile
-            message = messaging.Message(
-                notification=messaging.Notification(
-                    title='Prodotto disponibile!',
-                    body='Clicca per andare al checkout 🔥',
-                ),
-                data={"url": url},
-                topic=user_id
-            )
-            messaging.send(message)
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Modifica qui per il sito target
+        availability = soup.select_one('#availability')
+        if availability and ('disponibile' in availability.text.lower() or 'in stock' in availability.text.lower()):
+            return True
     except Exception as e:
-        print(f"Errore su {url}: {e}")
+        print(f"Errore durante il controllo del prodotto: {e}")
+    return False
 
-def monitoring_loop():
+# === Funzione per inviare notifica push ===
+def send_notification(token, title, body, url):
+    message = messaging.Message(
+        notification=messaging.Notification(
+            title=title,
+            body=body
+        ),
+        token=token,
+        data={"link": url}
+    )
+    try:
+        response = messaging.send(message)
+        print(f"Notifica inviata: {response}")
+    except Exception as e:
+        print(f"Errore invio notifica: {e}")
+
+# === Funzione di monitoraggio in background ===
+def monitor():
     while True:
-        users_ref = db.reference('users')
-        users_data = users_ref.get()
-        if users_data:
-            for user_id, data in users_data.items():
-                urls = data.get('urls', [])
-                for url in urls:
-                    check_and_notify(user_id, url)
-        time.sleep(60)  # Intervallo tra i controlli
+        print("Controllo prodotti...")
+        users_ref = db.collection('users')
+        users = users_ref.stream()
 
-threading.Thread(target=monitoring_loop, daemon=True).start()
+        for user in users:
+            user_data = user.to_dict()
+            token = user_data.get('token')
+            urls = user_data.get('urls', [])
+            notified = user_data.get('notified', [])
 
-# === API ENDPOINTS ===
+            for url in urls:
+                if url in notified:
+                    continue
+                if is_product_available(url):
+                    print(f"Disponibile: {url}")
+                    send_notification(token, "Prodotto disponibile!", "Tocca per acquistare ora.", url)
+                    notified.append(url)
 
+            users_ref.document(user.id).set({'notified': notified}, merge=True)
+        time.sleep(60)
+
+# === Endpoint per aggiungere URL ===
 @app.route('/add_url', methods=['POST'])
 def add_url():
     data = request.json
     user_id = data.get('user_id')
     url = data.get('url')
-    if not user_id or not url:
-        return jsonify({'error': 'user_id and url are required'}), 400
+    token = data.get('token')  # Firebase Messaging token
 
-    user_ref = db.reference(f'users/{user_id}/urls')
-    current_urls = user_ref.get() or []
-    if url not in current_urls:
-        current_urls.append(url)
-    user_ref.set(current_urls)
+    if not user_id or not url or not token:
+        return jsonify({'error': 'user_id, url e token sono richiesti'}), 400
+
+    user_doc = db.collection('users').document(user_id)
+    user_data = user_doc.get().to_dict() or {}
+
+    urls = user_data.get('urls', [])
+    if url not in urls:
+        urls.append(url)
+
+    # Salva l'utente con urls e token
+    user_doc.set({
+        'urls': urls,
+        'token': token
+    }, merge=True)
+
     return jsonify({'message': 'URL aggiunto con successo'})
 
-@app.route('/remove_url', methods=['POST'])
-def remove_url():
-    data = request.json
-    user_id = data.get('user_id')
-    url = data.get('url')
-    if not user_id or not url:
-        return jsonify({'error': 'user_id and url are required'}), 400
-
-    user_ref = db.reference(f'users/{user_id}/urls')
-    current_urls = user_ref.get() or []
-    if url in current_urls:
-        current_urls.remove(url)
-        user_ref.set(current_urls)
-    return jsonify({'message': 'URL rimosso con successo'})
-
+# === Root endpoint ===
 @app.route('/')
 def home():
-    return 'Pokemonitor backend attivo!'
+    return "Pokemonitor backend attivo"
 
-# === AVVIO ===
+# === Avvio monitoraggio in thread separato ===
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    threading.Thread(target=monitor, daemon=True).start()
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
+
