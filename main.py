@@ -1,64 +1,74 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import requests
 from bs4 import BeautifulSoup
 import firebase_admin
 from firebase_admin import credentials, messaging
 import os
-import json
-import threading
-import time
 
+# ==== CONFIG ====
+# Firebase credentials
+FIREBASE_CREDENTIALS_PATH = "firebase-admin.json"
+
+# CORS Origins (es. app React/Vue/Flutter)
+origins = ["*"]  # In produzione è meglio specificare i domini
+
+# ==== APP SETUP ====
 app = FastAPI()
-watchlist = {}
 
-# Firebase config
-cred_json = os.getenv("FIREBASE_CREDENTIALS")
-if not cred_json:
-    raise Exception("Firebase credentials not found in environment variables")
-cred = credentials.Certificate(json.loads(cred_json))
-firebase_admin.initialize_app(cred)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-class MonitorRequest(BaseModel):
-    url: str
-    token: str
+# ==== FIREBASE INIT ====
+if not firebase_admin._apps:
+    if os.path.exists(FIREBASE_CREDENTIALS_PATH):
+        cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+        firebase_admin.initialize_app(cred)
+    else:
+        raise FileNotFoundError("Il file firebase-admin.json non è stato trovato")
 
-def check_availability(url):
+# ==== SCRAPING FUNCTION ====
+def check_availability(url: str) -> bool:
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept-Language": "it-IT,it;q=0.9"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
         res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        title = soup.select_one("#productTitle")
-        out_of_stock = soup.select_one("#availability span")
-        if title and out_of_stock and "disponibile" in out_of_stock.get_text().lower():
+        soup = BeautifulSoup(res.text, "html.parser")
+        availability = soup.select_one("#availability")
+        if availability and "disponibile" in availability.text.lower():
             return True
-    except:
-        pass
+    except Exception as e:
+        print(f"Errore nello scraping: {e}")
     return False
 
-def monitor_url(url, token):
-    while True:
-        if check_availability(url):
-            messaging.send(
-                messaging.Message(
-                    token=token,
-                    notification=messaging.Notification(
-                        title="Prodotto disponibile!",
-                        body=f"{url}"
-                    )
-                )
-            )
-            watchlist.pop(url, None)
-            break
-        time.sleep(60)  # ogni 60 secondi
+# ==== FIREBASE NOTIFICATION ====
+def send_notification(token: str, title: str, body: str) -> None:
+    try:
+        message = messaging.Message(
+            notification=messaging.Notification(title=title, body=body),
+            token=token,
+        )
+        response = messaging.send(message)
+        print(f"Notifica inviata: {response}")
+    except Exception as e:
+        print(f"Errore nell'invio della notifica: {e}")
 
-@app.post("/add")
-async def add_to_watchlist(req: MonitorRequest, background_tasks: BackgroundTasks):
-    if req.url in watchlist:
-        raise HTTPException(status_code=400, detail="URL già monitorato")
-    watchlist[req.url] = req.token
-    background_tasks.add_task(monitor_url, req.url, req.token)
-    return {"message": "Monitoraggio avviato"}
+# ==== API ROUTES ====
+@app.get("/")
+async def root():
+    return {"status": "Pokemonitor API Online"}
+
+@app.post("/check/")
+async def check_item(url: str, token: str):
+    if not url or not token:
+        raise HTTPException(status_code=400, detail="URL e token sono obbligatori")
+    available = check_availability(url)
+    if available:
+        send_notification(token, "Disponibile!", f"Il prodotto è tornato disponibile:\n{url}")
+    return {"url": url, "disponibile": available}
+
