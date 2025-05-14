@@ -3,7 +3,7 @@ import json
 import requests
 import threading
 import time
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
 from bs4 import BeautifulSoup
@@ -21,20 +21,30 @@ db = firestore.client()
 # === Config Flask ===
 app = Flask(__name__)
 
+# === Cache per URL già controllati ===
+last_checked = {}
+
 # === Verifica disponibilità prodotto ===
 def is_product_available(url):
-    headers = {
-        'User-Agent': 'Mozilla/5.0'
-    }
+    current_time = time.time()
+    # Evita di fare la richiesta se l'URL è stato controllato recentemente
+    if url in last_checked and current_time - last_checked[url] < 180:
+        return False
+
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.content, 'html.parser')
         availability = soup.select_one('#availability')
         if availability:
             text = availability.text.lower()
-            return 'disponibile' in text or 'in stock' in text
+            if 'disponibile' in text or 'in stock' in text:
+                last_checked[url] = current_time  # Aggiorna il timestamp
+                return True
     except Exception as e:
         print(f"❌ Errore controllo prodotto: {e}")
+    
+    last_checked[url] = current_time  # Anche in caso di errore, aggiorna il timestamp
     return False
 
 # === Invia notifica push ===
@@ -76,10 +86,10 @@ def monitor():
                 if updated:
                     db.collection('users').document(user_id).set({'notified': list(notified)}, merge=True)
 
-            time.sleep(180)  # Riduce uso RAM/CPU
+            time.sleep(180)  # Limita la frequenza di controllo (3 minuti)
         except Exception as e:
             print(f"❌ Errore nel monitoraggio: {e}")
-            time.sleep(180)
+            time.sleep(180)  # Riprovare dopo un po'
 
 # === Endpoint per registrare token FCM ===
 @app.route('/register_token', methods=['POST'])
@@ -109,28 +119,6 @@ def add_url():
         urls.append(url)
         ref.set({'urls': urls}, merge=True)
     return jsonify({'message': 'URL aggiunto con successo'})
-
-# === Homepage con visualizzazione ===
-@app.route('/')
-def home():
-    users = db.collection('users').stream()
-    user_info = []
-    for user in users:
-        d = user.to_dict()
-        user_info.append({
-            'id': user.id,
-            'urls': d.get('urls', []),
-            'notified': d.get('notified', [])
-        })
-    return render_template_string("""
-    <h1>✅ Pokemonitor backend attivo!</h1>
-    <h2>Utenti:</h2>
-    <ul>
-    {% for u in users %}
-      <li><b>{{ u.id }}</b><br>Monitorati: {{ u.urls|length }}<br>Notificati: {{ u.notified|length }}</li>
-    {% endfor %}
-    </ul>
-    """, users=user_info)
 
 # === Avvio monitor in background ===
 if __name__ == '__main__':
