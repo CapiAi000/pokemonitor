@@ -31,7 +31,6 @@ def is_product_available(url):
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.content, 'html.parser')
 
-        # Modifica qui per il sito target
         availability = soup.select_one('#availability')
         if availability and ('disponibile' in availability.text.lower() or 'in stock' in availability.text.lower()):
             return True
@@ -51,18 +50,18 @@ def send_notification(token, title, body, url):
     )
     try:
         response = messaging.send(message)
-        print(f"Notifica inviata: {response}")
+        print(f"✅ Notifica inviata: {response}")
     except Exception as e:
-        print(f"Errore invio notifica: {e}")
+        print(f"❌ Errore invio notifica: {e}")
 
-# === Funzione di monitoraggio in background ===
+# === Funzione di monitoraggio ===
 def monitor():
     while True:
-        print("Controllo prodotti...")
-        users_ref = db.collection('users')
-        users = users_ref.stream()
+        print("🔁 Controllo prodotti in corso...")
+        users = db.collection('users').stream()
 
         for user in users:
+            user_id = user.id
             user_data = user.to_dict()
             token = user_data.get('token')
             urls = user_data.get('urls', [])
@@ -72,47 +71,57 @@ def monitor():
                 if url in notified:
                     continue
                 if is_product_available(url):
-                    print(f"Disponibile: {url}")
+                    print(f"🛒 Prodotto disponibile per {user_id}: {url}")
                     send_notification(token, "Prodotto disponibile!", "Tocca per acquistare ora.", url)
                     notified.append(url)
 
-            users_ref.document(user.id).set({'notified': notified}, merge=True)
+            db.collection('users').document(user_id).set({'notified': notified}, merge=True)
+
         time.sleep(60)
 
-# === Endpoint per aggiungere URL ===
+# === Endpoint per registrare token FCM ===
+@app.route('/register_token', methods=['POST'])
+def register_token():
+    data = request.json
+    user_id = data.get('user_id')
+    token = data.get('token')
+
+    if not user_id or not token:
+        return jsonify({'error': 'user_id e token sono richiesti'}), 400
+
+    db.collection('users').document(user_id).set({'token': token}, merge=True)
+    return jsonify({'message': 'Token registrato con successo'})
+
+# === Endpoint per aggiungere URL da monitorare ===
 @app.route('/add_url', methods=['POST'])
 def add_url():
     data = request.json
     user_id = data.get('user_id')
     url = data.get('url')
-    token = data.get('token')  # Firebase Messaging token
 
-    if not user_id or not url or not token:
-        return jsonify({'error': 'user_id, url e token sono richiesti'}), 400
+    if not user_id or not url:
+        return jsonify({'error': 'user_id e url sono richiesti'}), 400
 
-    user_doc = db.collection('users').document(user_id)
-    user_data = user_doc.get().to_dict() or {}
+    user_ref = db.collection('users').document(user_id)
+    user_doc = user_ref.get()
+    user_data = user_doc.to_dict() or {}
 
     urls = user_data.get('urls', [])
     if url not in urls:
         urls.append(url)
 
-    # Salva l'utente con urls e token
-    user_doc.set({
-        'urls': urls,
-        'token': token
-    }, merge=True)
-
+    user_ref.set({'urls': urls}, merge=True)
     return jsonify({'message': 'URL aggiunto con successo'})
 
-# === Root endpoint ===
+# === Endpoint base ===
 @app.route('/')
 def home():
-    return "Pokemonitor backend attivo"
+    return "✅ Pokemonitor backend attivo!"
 
-# === Avvio monitoraggio in thread separato ===
+# === Avvio thread di monitoraggio ===
 if __name__ == '__main__':
     threading.Thread(target=monitor, daemon=True).start()
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
