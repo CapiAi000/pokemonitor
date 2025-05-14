@@ -127,8 +127,10 @@ def home():
 
 # === Avvio thread di monitoraggio ===
 if __name__ == '__main__':
-    threading.Thread(target=monitor, daemon=True).start()
+    if os.environ.get('RUN_MONITOR') == '1':  # lancia solo se RUN_MONITOR è settata
+        threading.Thread(target=monitor, daemon=True).start()
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
