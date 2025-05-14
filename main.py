@@ -30,21 +30,17 @@ def is_product_available(url):
     try:
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.content, 'html.parser')
-
         availability = soup.select_one('#availability')
         if availability and ('disponibile' in availability.text.lower() or 'in stock' in availability.text.lower()):
             return True
     except Exception as e:
-        print(f"Errore durante il controllo del prodotto: {e}")
+        print(f"❌ Errore durante il controllo del prodotto: {e}")
     return False
 
 # === Funzione per inviare notifica push ===
 def send_notification(token, title, body, url):
     message = messaging.Message(
-        notification=messaging.Notification(
-            title=title,
-            body=body
-        ),
+        notification=messaging.Notification(title=title, body=body),
         token=token,
         data={"link": url}
     )
@@ -90,6 +86,7 @@ def register_token():
         return jsonify({'error': 'user_id e token sono richiesti'}), 400
 
     db.collection('users').document(user_id).set({'token': token}, merge=True)
+    print(f"📥 Token registrato per {user_id}")
     return jsonify({'message': 'Token registrato con successo'})
 
 # === Endpoint per aggiungere URL da monitorare ===
@@ -111,12 +108,22 @@ def add_url():
         urls.append(url)
 
     user_ref.set({'urls': urls}, merge=True)
+    print(f"🔗 URL aggiunto per {user_id}: {url}")
     return jsonify({'message': 'URL aggiunto con successo'})
 
-# === Endpoint base ===
+# === Endpoint base con visualizzazione HTML semplice ===
 @app.route('/')
 def home():
-    return "✅ Pokemonitor backend attivo!"
+    users = db.collection('users').stream()
+    html = "<h1>✅ Pokemonitor backend attivo!</h1><h2>Utenti registrati:</h2><ul>"
+    for user in users:
+        data = user.to_dict()
+        html += f"<li><strong>{user.id}</strong><br>Token: {data.get('token', '-')[:20]}...<br>Link: <ul>"
+        for url in data.get('urls', []):
+            html += f"<li>{url}</li>"
+        html += "</ul></li>"
+    html += "</ul>"
+    return html
 
 # === Avvio thread di monitoraggio ===
 if __name__ == '__main__':
