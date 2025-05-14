@@ -94,37 +94,58 @@ def monitor():
 # === Endpoint per registrare token FCM ===
 @app.route('/register_token', methods=['POST'])
 def register_token():
-    data = request.json
-    user_id = data.get('user_id')
-    token = data.get('token')
-    if not user_id or not token:
-        return jsonify({'error': 'user_id e token richiesti'}), 400
-    db.collection('users').document(user_id).set({'token': token}, merge=True)
-    return jsonify({'message': 'Token registrato con successo'})
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        token = data.get('token')
+        if not user_id or not token:
+            return jsonify({'error': 'user_id e token richiesti'}), 400
+
+        db.collection('users').document(user_id).set({'token': token}, merge=True)
+        return jsonify({'message': 'Token registrato con successo'})
+    except Exception as e:
+        print(f"❌ Errore nel registro token: {e}")
+        return jsonify({'error': 'Errore nel registrare il token'}), 500
 
 # === Endpoint per aggiungere URL ===
 @app.route('/add_url', methods=['POST'])
 def add_url():
-    data = request.json
-    user_id = data.get('user_id')
-    url = data.get('url')
-    if not user_id or not url:
-        return jsonify({'error': 'user_id e url richiesti'}), 400
+    try:
+        data = request.json
+        user_id = data.get('user_id')
+        url = data.get('url')
+        
+        if not user_id or not url:
+            return jsonify({'error': 'user_id e url richiesti'}), 400
 
-    ref = db.collection('users').document(user_id)
-    doc = ref.get()
-    info = doc.to_dict() or {}
-    urls = info.get('urls', [])
-    if url not in urls:
-        urls.append(url)
-        ref.set({'urls': urls}, merge=True)
-    return jsonify({'message': 'URL aggiunto con successo'})
+        # Recupera l'utente e aggiorna la lista degli URL
+        ref = db.collection('users').document(user_id)
+        doc = ref.get()
+        
+        if not doc.exists:
+            return jsonify({'error': 'Utente non trovato'}), 404
+
+        info = doc.to_dict() or {}
+        urls = info.get('urls', [])
+        
+        if url not in urls:
+            urls.append(url)
+            ref.set({'urls': urls}, merge=True)
+        
+        return jsonify({'message': 'URL aggiunto con successo'})
+    except Exception as e:
+        print(f"❌ Errore nel gestire l'URL: {e}")
+        return jsonify({'error': 'Errore nell\'aggiungere URL'}), 500
 
 # === Avvio monitor in background ===
 if __name__ == '__main__':
+    # Avvia il monitoraggio dei prodotti in un thread separato
     threading.Thread(target=monitor, daemon=True).start()
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=False, host='0.0.0.0', port=port)
+
+    port = int(os.environ.get('PORT', 5000))  # Ottieni la porta da variabili d'ambiente
+    print(f"🚀 Server avviato su http://0.0.0.0:{port}")
+    app.run(debug=True, host='0.0.0.0', port=port)  # Avvia Flask in modalità di produzione
+
 
 
 
