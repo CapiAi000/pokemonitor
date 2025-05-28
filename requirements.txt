@@ -1,7 +1,0 @@
-fastapi
-flask
-gunicorn
-uvicorn
-requests
-beautifulsoup4
-firebase-admin
